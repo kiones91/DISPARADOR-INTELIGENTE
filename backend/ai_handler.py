@@ -115,65 +115,81 @@ def generate_with_openai_compatible(api_key, base_url, model, prompt):
 def call_ai_with_rotation(prompt, provider="gemini"):
     """
     Calls the specified AI provider using key rotation and round-robin.
-    Falls back to next keys if a call fails.
+    If all keys of the chosen provider fail, automatically falls back to 
+    other configured providers in order of priority.
     """
     provider = provider.lower()
-    rotator = rotators.get(provider)
-    if not rotator:
-        raise ValueError(f"Provedor '{provider}' não suportado.")
-        
-    rotator.load_keys()
-    if not rotator.keys:
-        raise ValueError(f"Nenhuma chave cadastrada para o provedor {provider.upper()}. Configure na aba Configurações.")
-
-    # Try up to the number of keys we have
-    attempts = len(rotator.keys)
-    last_error = None
     
-    for i in range(attempts):
-        api_key = rotator.get_next_key()
-        if not api_key:
-            break
+    # Establish priority order for failovers
+    providers_order = ["gemini", "openai", "groq", "deepseek", "openrouter"]
+    if provider in providers_order:
+        providers_order.remove(provider)
+    providers_order.insert(0, provider)
+    
+    errors_summary = []
+    
+    for current_provider in providers_order:
+        rotator = rotators.get(current_provider)
+        if not rotator:
+            continue
             
-        try:
-            logger.info(f"Tentando chamada com a chave {i+1}/{attempts} do provedor {provider.upper()}")
+        rotator.load_keys()
+        if not rotator.keys:
+            # Skip if the provider has no keys configured
+            continue
             
-            if provider == "gemini":
-                return generate_with_gemini(api_key, prompt)
-            elif provider == "openai":
-                return generate_with_openai_compatible(
-                    api_key=api_key,
-                    base_url="https://api.openai.com/v1",
-                    model="gpt-4o-mini",
-                    prompt=prompt
-                )
-            elif provider == "groq":
-                return generate_with_openai_compatible(
-                    api_key=api_key,
-                    base_url="https://api.groq.com/openai/v1",
-                    model="llama3-8b-8192",
-                    prompt=prompt
-                )
-            elif provider == "deepseek":
-                return generate_with_openai_compatible(
-                    api_key=api_key,
-                    base_url="https://api.deepseek.com/v1",
-                    model="deepseek-chat",
-                    prompt=prompt
-                )
-            elif provider == "openrouter":
-                return generate_with_openai_compatible(
-                    api_key=api_key,
-                    base_url="https://openrouter.ai/api/v1",
-                    model="meta-llama/llama-3-8b-instruct:free",
-                    prompt=prompt
-                )
-        except Exception as e:
-            logger.warning(f"Erro ao usar a chave {i+1} do provedor {provider.upper()}: {str(e)}")
-            last_error = e
-            # Continue loop to try next key
-            
-    raise RuntimeError(f"Todas as chaves do provedor {provider.upper()} falharam. Último erro: {str(last_error)}")
+        attempts = len(rotator.keys)
+        logger.info(f"Tentando provedor {current_provider.upper()} com {attempts} chave(s)...")
+        
+        for i in range(attempts):
+            api_key = rotator.get_next_key()
+            if not api_key:
+                break
+                
+            try:
+                logger.info(f"Chamando chave {i+1}/{attempts} do provedor {current_provider.upper()}...")
+                
+                if current_provider == "gemini":
+                    return generate_with_gemini(api_key, prompt)
+                elif current_provider == "openai":
+                    return generate_with_openai_compatible(
+                        api_key=api_key,
+                        base_url="https://api.openai.com/v1",
+                        model="gpt-4o-mini",
+                        prompt=prompt
+                    )
+                elif current_provider == "groq":
+                    return generate_with_openai_compatible(
+                        api_key=api_key,
+                        base_url="https://api.groq.com/openai/v1",
+                        model="llama3-8b-8192",
+                        prompt=prompt
+                    )
+                elif current_provider == "deepseek":
+                    return generate_with_openai_compatible(
+                        api_key=api_key,
+                        base_url="https://api.deepseek.com/v1",
+                        model="deepseek-chat",
+                        prompt=prompt
+                    )
+                elif current_provider == "openrouter":
+                    return generate_with_openai_compatible(
+                        api_key=api_key,
+                        base_url="https://openrouter.ai/api/v1",
+                        model="meta-llama/llama-3-8b-instruct:free",
+                        prompt=prompt
+                    )
+            except Exception as e:
+                err_msg = f"{current_provider.upper()} (Chave {i+1}): {str(e)}"
+                logger.warning(f"Falha na tentativa: {err_msg}")
+                errors_summary.append(err_msg)
+                # Continue loop to try next key in the active provider
+                
+    # If all configured keys and providers fail
+    raise RuntimeError(
+        f"Todos os provedores de IA falharam. "
+        f"Erros encontrados: {'; '.join(errors_summary)}"
+    )
 
 def generate_personalized_message(lead, provider="gemini"):
     """
