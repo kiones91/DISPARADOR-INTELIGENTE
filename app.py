@@ -455,6 +455,14 @@ elif menu_option == "⚙️ Configurações APIs":
         evolution_key = st.text_input("Evolution API Key (Global apikey)", db.get_setting("evolution_api_key", "global_api_key"))
         evolution_instance = st.text_input("Nome da Instância do WhatsApp", db.get_setting("evolution_instance_name", "prospecao"))
         
+        st.subheader("5. Modelo de Prompt da IA (Instruções de Abordagem)")
+        ai_prompt_template = st.text_area(
+            "Template de Prompt", 
+            db.get_setting("ai_prompt_template", db.DEFAULT_PROMPT_TEMPLATE), 
+            height=300, 
+            help="Variáveis disponíveis que serão preenchidas para cada lead: {nome}, {niche}, {rating}, {reviews}, {website}, {endereco}"
+        )
+        
         if st.form_submit_button("Salvar Configurações"):
             db.set_setting("ai_provider", active_provider)
             db.set_setting("gemini_keys", gemini_keys)
@@ -466,6 +474,7 @@ elif menu_option == "⚙️ Configurações APIs":
             db.set_setting("evolution_api_url", evolution_url)
             db.set_setting("evolution_api_key", evolution_key)
             db.set_setting("evolution_instance_name", evolution_instance)
+            db.set_setting("ai_prompt_template", ai_prompt_template)
             
             st.success("Configurações persistidas com sucesso!")
             time.sleep(1)

@@ -1,7 +1,7 @@
 import requests
 import json
 import logging
-from backend.database import get_setting, log_action
+from backend.database import get_setting, log_action, DEFAULT_PROMPT_TEMPLATE
 
 # Set up logger
 logging.basicConfig(level=logging.INFO)
@@ -212,7 +212,7 @@ def call_ai_with_rotation(prompt, provider="gemini"):
 
 def generate_personalized_message(lead, provider="gemini"):
     """
-    Generates a personalized prospecting message for a lead.
+    Generates a personalized prospecting message for a lead using the customizable prompt template.
     """
     nome = lead.get("nome", "Empresa")
     niche = lead.get("palavra_chave", "seu segmento")
@@ -221,25 +221,17 @@ def generate_personalized_message(lead, provider="gemini"):
     website = lead.get("website", "")
     endereco = lead.get("endereco", "")
 
-    # Build prompt based on lead data
-    prompt = f"""
-    Analise os dados desta empresa e escreva uma "Primeira Mensagem de Abordagem" para enviar pelo WhatsApp.
-    
-    DADOS DA EMPRESA:
-    - Nome: {nome}
-    - Nicho/Busca: {niche}
-    - Nota Google Maps: {rating if rating else 'Não informado'} (Total de avaliações: {reviews})
-    - Website: {website if website else 'Não informado'}
-    - Endereço: {endereco if endereco else 'Não informado'}
-    
-    REGRAS CRÍTICAS DA MENSAGEM:
-    1. A mensagem deve ser EXCLUSIVA, amigável e direta ao ponto (não pareça spam corporativo ou robótico).
-    2. Mencione de forma natural um ponto positivo (ex: 'vi que vocês têm uma excelente nota de {rating} no Google com {reviews} avaliações' ou 'visitei o site de vocês {website} e achei muito interessante').
-    3. Apresente um gancho de valor amigável sugerindo que você pode ajudar a trazer mais clientes ou melhorar processos do nicho ({niche}).
-    4. Termine com uma pergunta simples e aberta para iniciar uma conversa amigável (ex: 'Faz sentido para vocês?' ou 'Como está a captação de clientes de vocês essa semana?').
-    5. Não use placeholders como [Seu Nome], use um tom no singular ou plural amigável, apenas escreva o corpo exato da mensagem pronta para ser enviada.
-    6. Mantenha o tamanho ideal para leitura rápida no celular (máximo 4-5 parágrafos curtos, use emojis moderadamente).
-    """
-    
+    # Load custom template from settings, fallback to default Buffallos template
+    template = get_setting("ai_prompt_template", DEFAULT_PROMPT_TEMPLATE)
+
+    # Safe variable replacement to avoid KeyError exceptions from random user brackets {}
+    prompt = template.replace("{nome}", nome) \
+                     .replace("{niche}", niche) \
+                     .replace("{rating}", str(rating) if rating else "Não informado") \
+                     .replace("{reviews}", str(reviews)) \
+                     .replace("{website}", website if website else "Não informado") \
+                     .replace("{endereco}", endereco if endereco else "Não informado")
+
     return call_ai_with_rotation(prompt, provider)
+
 

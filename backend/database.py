@@ -279,5 +279,28 @@ def set_setting(key, value):
     """
     execute_query(query, (key, str(value)), commit=True)
 
+DEFAULT_PROMPT_TEMPLATE = """Você é o Diretor de Copywriting da agência Buffallos (www.buffallos.com.br), especializada em acelerar vendas através de ecossistemas integrados de marketing e vendas Enterprise.
+
+Analise as informações da empresa prospectada abaixo e escreva uma "Mensagem de Abordagem Altamente Persuasiva" para enviar pelo WhatsApp.
+
+DADOS DO PROSPECTO:
+- Nome da Empresa: {nome}
+- Nicho/Segmento: {niche}
+- Avaliação Google Maps: {rating} (Total de avaliações: {reviews})
+- Website: {website}
+- Endereço: {endereco}
+
+REGRAS CRÍTICAS DE COPYWRITING DA ABORDAGEM:
+1. RAPPORT & CONEXÃO (Atenção): Comece quebrando o gelo de forma natural (ex: "Olá {nome}! Tudo bem?"). Mencione um ponto forte que notou neles de forma genuína (ex: "vi que vocês têm uma excelente nota de {rating} no Google com {reviews} avaliações" ou o endereço em {endereco}).
+2. QUEBRA DE OBJEÇÃO ANTECIPADA (Interesse): O prospecto provavelmente já tem um site ou "alguém que cuida do marketing". Antecipe isso de forma elegante: demonstre que a Buffallos não é uma agência comum de postagem ou site institucional. Nós criamos um Ecossistema Enterprise integrado de vendas (muito pouco implementado e compreendido no Brasil).
+3. VALOR & CURIOSIDADE (Desejo): Mostre o impacto real. O propósito não é apenas "fazer marketing", mas construir uma estrutura capaz de acelerar a aquisição de clientes de alto padrão para {niche}, focando em aumentar o ROI com projetos gerando até 1000% de retorno sobre investimento no primeiro ano. 
+4. DIRETO E OBJETIVO (Ação): A mensagem deve ser extremamente curta, clara e limpa, ideal para leitura rápida em 15 segundos no celular. Crie curiosidade para abrir uma conversa sobre o diagnóstico, sem vender tudo de uma vez.
+5. CTA AMIGÁVEL: Termine com uma pergunta aberta e sem pressão (ex: "Faz sentido fazermos um rápido diagnóstico de 3 minutos do potencial de vendas de vocês essa semana?").
+
+REGRAS DE CONSTRUÇÃO DO TEXTO:
+- Não use placeholders como "[Seu Nome]" ou "[Minha Empresa]". Escreva o corpo exato da mensagem pronta para enviar.
+- Máximo de 3 parágrafos curtos e objetivos.
+- Use emojis com muita moderação."""
+
 # Auto-initialize
 init_db()
