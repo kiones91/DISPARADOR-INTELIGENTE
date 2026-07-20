@@ -61,12 +61,14 @@ def generate_simulated_leads(keyword, radius):
         "Restaurante": ["Restaurante", "Pizzaria", "Hamburgueria", "Cantina", "Espaço Gourmet"],
         "Advogado": ["Advocacia", "Escritório de Advocacia", "Associados", "Jurídico"],
         "Padaria": ["Padaria", "Panificadora", "Confeitaria", "Pão Quente"],
-        "Mercado": ["Supermercado", "Mercadinho", "Empório", "Mercearia"]
+        "Mercado": ["Supermercado", "Mercadinho", "Empório", "Mercearia"],
+        "Barbearia": ["Barbearia", "Corte & Barba", "Salão", "Espaço Masculino"],
+        "Petshop": ["Petshop", "Clínica Veterinária", "Banho & Tosa", "Bicho Lindo"]
     }
     
     # Determine prefixes list based on niche match
     niche_lower = niche.lower()
-    selected_prefixes = prefixes.get("Mercado") # default fallback
+    selected_prefixes = [niche] # Use the searched niche itself as fallback instead of Mercado!
     for k, val in prefixes.items():
         if k.lower() in niche_lower or niche_lower in k.lower():
             selected_prefixes = val
