@@ -1,0 +1,27 @@
+# Python virtual environments & packages
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# SQLite local databases
+prospecao.db
+prospecao.db-journal
+
+# Evolution API data and WhatsApp session logs
+backend/whatsapp_session/
+whatsapp_session/
+evolution_data/
+postgres_data/
+redis_data/
+
+# Node packages & compiled folders
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+
+# OS specific files
+.DS_Store
+Thumbs.db
