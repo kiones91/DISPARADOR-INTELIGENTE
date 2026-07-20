@@ -1,7 +1,7 @@
 import requests
 import json
 import logging
-from backend.database import get_setting
+from backend.database import get_setting, log_action
 
 # Set up logger
 logging.basicConfig(level=logging.INFO)
@@ -60,6 +60,14 @@ rotators = {
     "openrouter": KeyRotator("openrouter")
 }
 
+def mask_key(key):
+    """Masks an API key to show only first 4 and last 4 characters for security."""
+    if not key:
+        return "N/A"
+    if len(key) <= 8:
+        return "***"
+    return f"{key[:4]}...{key[-4:]}"
+
 def generate_with_gemini(api_key, prompt):
     """Calls the Google Gemini API directly using requests."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
@@ -73,7 +81,8 @@ def generate_with_gemini(api_key, prompt):
     }
     
     response = requests.post(url, headers=headers, json=payload, timeout=15)
-    response.raise_for_status()
+    if response.status_code != 200:
+        raise ValueError(f"HTTP {response.status_code}: {response.text}")
     data = response.json()
     
     try:
@@ -104,7 +113,8 @@ def generate_with_openai_compatible(api_key, base_url, model, prompt):
     }
     
     response = requests.post(url, headers=headers, json=payload, timeout=20)
-    response.raise_for_status()
+    if response.status_code != 200:
+        raise ValueError(f"HTTP {response.status_code}: {response.text}")
     data = response.json()
     
     try:
@@ -128,6 +138,8 @@ def call_ai_with_rotation(prompt, provider="gemini"):
     
     errors_summary = []
     
+    log_action(f"IA: Iniciando requisição de copy. Provedor padrão selecionado: '{provider.upper()}'", "INFO")
+    
     for current_provider in providers_order:
         rotator = rotators.get(current_provider)
         if not rotator:
@@ -139,53 +151,60 @@ def call_ai_with_rotation(prompt, provider="gemini"):
             continue
             
         attempts = len(rotator.keys)
-        logger.info(f"Tentando provedor {current_provider.upper()} com {attempts} chave(s)...")
+        log_action(f"IA: Provedor {current_provider.upper()} possui {attempts} chave(s) configurada(s). Iniciando tentativas...", "INFO")
         
         for i in range(attempts):
             api_key = rotator.get_next_key()
             if not api_key:
                 break
                 
+            masked = mask_key(api_key)
+            log_action(f"IA: Chamando provedor {current_provider.upper()} com a chave {i+1}/{attempts} ({masked})...", "INFO")
+            
             try:
-                logger.info(f"Chamando chave {i+1}/{attempts} do provedor {current_provider.upper()}...")
-                
                 if current_provider == "gemini":
-                    return generate_with_gemini(api_key, prompt)
+                    res = generate_with_gemini(api_key, prompt)
                 elif current_provider == "openai":
-                    return generate_with_openai_compatible(
+                    res = generate_with_openai_compatible(
                         api_key=api_key,
                         base_url="https://api.openai.com/v1",
                         model="gpt-4o-mini",
                         prompt=prompt
                     )
                 elif current_provider == "groq":
-                    return generate_with_openai_compatible(
+                    res = generate_with_openai_compatible(
                         api_key=api_key,
                         base_url="https://api.groq.com/openai/v1",
-                        model="llama3-8b-8192",
+                        model="llama-3.1-8b-instant",  # Updated to Groq's active model
                         prompt=prompt
                     )
                 elif current_provider == "deepseek":
-                    return generate_with_openai_compatible(
+                    res = generate_with_openai_compatible(
                         api_key=api_key,
                         base_url="https://api.deepseek.com/v1",
                         model="deepseek-chat",
                         prompt=prompt
                     )
                 elif current_provider == "openrouter":
-                    return generate_with_openai_compatible(
+                    res = generate_with_openai_compatible(
                         api_key=api_key,
                         base_url="https://openrouter.ai/api/v1",
                         model="meta-llama/llama-3-8b-instruct:free",
                         prompt=prompt
                     )
+                
+                log_action(f"IA: Sucesso! Mensagem gerada com sucesso pelo provedor {current_provider.upper()}.", "INFO")
+                return res
             except Exception as e:
                 err_msg = f"{current_provider.upper()} (Chave {i+1}): {str(e)}"
-                logger.warning(f"Falha na tentativa: {err_msg}")
+                log_action(f"IA: Falha com chave {i+1} de {current_provider.upper()}. Detalhe: {str(e)}", "WARNING")
                 errors_summary.append(err_msg)
                 # Continue loop to try next key in the active provider
                 
+        log_action(f"IA: Esgotadas todas as chaves do provedor {current_provider.upper()}.", "WARNING")
+                
     # If all configured keys and providers fail
+    log_action(f"IA: ERRO CRÍTICO - Todos os provedores de IA falharam.", "ERROR")
     raise RuntimeError(
         f"Todos os provedores de IA falharam. "
         f"Erros encontrados: {'; '.join(errors_summary)}"
@@ -223,3 +242,4 @@ def generate_personalized_message(lead, provider="gemini"):
     """
     
     return call_ai_with_rotation(prompt, provider)
+

@@ -6,7 +6,7 @@ import requests
 import os
 import re
 from datetime import datetime
-from backend.database import get_lead, update_lead, get_setting
+from backend.database import get_lead, update_lead, get_setting, log_action
 
 logger = logging.getLogger("WhatsAppBot")
 
@@ -102,22 +102,19 @@ class EvolutionCampaignManager:
             response = requests.get(f"{url}/instance/connectionState/{instance}", headers=headers, timeout=5)
             
             if response.status_code in [404, 400] or "not found" in response.text.lower():
-                # Instance doesn't exist, create it
+                log_action(f"WhatsApp: Instância '{instance}' não encontrada. Criando nova instância...", "WARNING")
                 self.create_instance()
                 self.get_qr_code()
                 return "waiting_qr"
                 
             if response.status_code == 200:
                 data = response.json()
-                # Parse connection state
-                # Expected structure: { "instance": { "state": "open" | "close" | "connecting" } }
                 state = data.get("instance", {}).get("state")
                 
                 if state == "open":
                     self.qr_code_base64 = None
                     return "connected"
                 elif state in ["close", "connecting"]:
-                    # Fetch fresh QR code
                     self.get_qr_code()
                     return "waiting_qr"
                 else:
@@ -125,7 +122,7 @@ class EvolutionCampaignManager:
                     
             return "disconnected"
         except Exception as e:
-            logger.error(f"Error checking Evolution connection: {str(e)}")
+            log_action(f"WhatsApp: Falha ao checar status da Evolution API: {str(e)}", "WARNING")
             return "disconnected"
 
     def logout_instance(self):
@@ -134,14 +131,14 @@ class EvolutionCampaignManager:
         headers = {"apikey": key}
         
         try:
-            logger.info(f"Logging out instance '{instance}'...")
+            log_action(f"WhatsApp: Desconectando instância '{instance}'...", "WARNING")
             requests.post(f"{url}/instance/logout/{instance}", headers=headers, timeout=10)
-            logger.info(f"Deleting instance '{instance}'...")
+            log_action(f"WhatsApp: Deletando instância '{instance}' do servidor...", "WARNING")
             requests.delete(f"{url}/instance/delete/{instance}", headers=headers, timeout=10)
             self.qr_code_base64 = None
             return True
         except Exception as e:
-            logger.error(f"Error logging out instance: {str(e)}")
+            log_action(f"WhatsApp: Falha ao deslogar instância: {str(e)}", "ERROR")
             return False
 
     def clean_phone_number(self, phone):
@@ -166,7 +163,7 @@ class EvolutionCampaignManager:
         }
         
         try:
-            logger.info(f"Simulating composing presence (typing...) for {clean_phone}")
+            log_action(f"WhatsApp: Simulando comportamento humano 'digitando...' para {clean_phone}", "INFO")
             requests.post(f"{url}/chat/sendPresence/{instance}", headers=headers, json=payload, timeout=5)
         except Exception as e:
             logger.warning(f"Failed to set composing status: {str(e)}")
@@ -193,13 +190,13 @@ class EvolutionCampaignManager:
             "linkPreview": True
         }
         
-        logger.info(f"Sending Evolution message to: {clean_phone}")
+        log_action(f"WhatsApp: Enviando mensagem efetiva para: {clean_phone}", "INFO")
         response = requests.post(f"{url}/message/sendText/{instance}", headers=headers, json=payload, timeout=15)
         
         if response.status_code not in [200, 201]:
-            raise RuntimeError(f"Evolution API returned error status {response.status_code}: {response.text}")
+            raise RuntimeError(f"Evolution API retornou erro HTTP {response.status_code}: {response.text}")
             
-        logger.info("Message successfully dispatched by Evolution API.")
+        log_action(f"WhatsApp: Mensagem entregue com sucesso para {clean_phone}.", "INFO")
 
     def run_campaign(self, lead_ids):
         """Worker function running in a background thread to send messages with randomized delays and strategic cooldown breaks."""
@@ -209,14 +206,14 @@ class EvolutionCampaignManager:
         self.leads_failed = 0
         self.cooldown_active = False
         
-        logger.info(f"[CAMPANHA] Iniciando campanha Evolution API para {self.leads_total} leads.")
+        log_action(f"WhatsApp: Iniciando campanha de disparos para {self.leads_total} leads.", "INFO")
         
         # Batch count to trigger strategic cooldowns
         leads_in_batch = 0
         
         for idx, lead_id in enumerate(lead_ids):
             if not self.campaign_active:
-                logger.info("[CAMPANHA] Interrompida pelo usuário.")
+                log_action("WhatsApp: Campanha de disparos interrompida pelo usuário.", "WARNING")
                 break
                 
             self.current_lead_id = lead_id
@@ -227,6 +224,7 @@ class EvolutionCampaignManager:
                 continue
                 
             if not lead.get("mensagem_personalizada"):
+                log_action(f"WhatsApp: Ignorando '{lead['nome']}' por falta de mensagem de IA gerada.", "WARNING")
                 update_lead(lead_id, {
                     "status_whatsapp": "Erro",
                     "detalhe_erro": "Falta mensagem de IA."
@@ -235,6 +233,7 @@ class EvolutionCampaignManager:
                 continue
                 
             update_lead(lead_id, {"status_whatsapp": "Processando"})
+            log_action(f"WhatsApp: Processando disparo para '{lead['nome']}' ({lead['telefone']})...", "INFO")
             
             try:
                 # 1. Send the message (this handles composing presence simulation internally)
@@ -250,7 +249,7 @@ class EvolutionCampaignManager:
                 leads_in_batch += 1
                 
             except Exception as e:
-                logger.error(f"[CAMPANHA] Erro ao enviar lead {lead_id}: {str(e)}")
+                log_action(f"WhatsApp: Falha ao enviar para '{lead['nome']}'. Detalhe: {str(e)}", "ERROR")
                 update_lead(lead_id, {
                     "status_whatsapp": "Erro",
                     "detalhe_erro": str(e)
@@ -264,9 +263,8 @@ class EvolutionCampaignManager:
                 # Every 10 to 15 random messages, take a longer resting break
                 cooldown_trigger_limit = random.choice([10, 11, 12, 13, 14, 15])
                 if leads_in_batch >= cooldown_trigger_limit:
-                    # Strategic cooldown: 5 to 10 minutes (300 to 600 seconds)
                     cooldown_duration = random.randint(300, 600)
-                    logger.info(f"[CAMPANHA COOLDOWN] Parada estratégica anti-ban. Descansando número por {cooldown_duration}s...")
+                    log_action(f"WhatsApp: Parada estratégica anti-ban ativa! Descansando o número por {cooldown_duration}s...", "WARNING")
                     
                     self.cooldown_active = True
                     self.countdown_remaining = cooldown_duration
@@ -281,11 +279,10 @@ class EvolutionCampaignManager:
                 # Rule A: Randomized Dynamic Delay between standard messages
                 # Random delay between 60 and 150 seconds
                 else:
-                    # Let's read if test override is active (for fast debugging/validation)
                     delay_override = os.getenv("WHATSAPP_TEST_DELAY")
                     delay_duration = int(delay_override) if delay_override else random.randint(60, 150)
                     
-                    logger.info(f"[CAMPANHA DELAY] Esperando {delay_duration}s (delay dinâmico)...")
+                    log_action(f"WhatsApp: Aguardando delay randômico de {delay_duration}s para o próximo disparo...", "INFO")
                     self.countdown_remaining = delay_duration
                     while self.countdown_remaining > 0 and self.campaign_active:
                         time.sleep(1)
@@ -296,7 +293,7 @@ class EvolutionCampaignManager:
         self.current_lead_id = None
         self.countdown_remaining = 0
         self.cooldown_active = False
-        logger.info("[CAMPANHA] Finalizada.")
+        log_action(f"WhatsApp: Campanha de disparos finalizada. Enviados com sucesso: {self.leads_completed}, Falhas: {self.leads_failed}", "INFO")
 
     def start_campaign_thread(self, lead_ids):
         """Launches the background thread processing the campaign queue."""
@@ -317,7 +314,7 @@ class EvolutionCampaignManager:
         self.campaign_active = False
         self.countdown_remaining = 0
         self.cooldown_active = False
-        logger.info("[CAMPANHA] Solicitada interrupção.")
+        log_action("WhatsApp: Solicitação de parada da campanha em lote recebida.", "WARNING")
 
 # Global instance of bot
 bot_manager = EvolutionCampaignManager()

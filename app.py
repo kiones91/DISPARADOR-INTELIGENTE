@@ -105,7 +105,8 @@ menu_option = st.sidebar.radio(
         "📍 Extrator Google Maps", 
         "👥 Leads & Prospecção", 
         "✉️ Disparador WhatsApp", 
-        "⚙️ Configurações APIs"
+        "⚙️ Configurações APIs",
+        "📄 Logs do Sistema"
     ]
 )
 
@@ -476,3 +477,64 @@ elif menu_option == "⚙️ Configurações APIs":
     col_help1.markdown("[Google Gemini AI Studio](https://aistudio.google.com/)")
     col_help2.markdown("[OpenAI API Console](https://platform.openai.com/)")
     col_help3.markdown("[Groq Cloud Console](https://console.groq.com/)")
+
+# ----------------- TELA: LOGS DO SISTEMA -----------------
+elif menu_option == "📄 Logs do Sistema":
+    st.title("Logs Gerais do Sistema")
+    st.write("Visualize em tempo real tudo o que acontece em segundo plano no Disparador Inteligente.")
+    
+    # Filter tools
+    col_l1, col_l2, col_l3 = st.columns([2, 1, 1])
+    with col_l1:
+        level_filter = st.selectbox(
+            "Filtrar por Gravidade:",
+            ["Todos", "INFO", "WARNING", "ERROR"],
+            index=0
+        )
+    with col_l2:
+        max_entries = st.number_input("Entradas máximas:", min_value=10, max_value=500, value=100, step=10)
+    with col_l3:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("Limpar Logs", use_container_width=True):
+            db.clear_logs()
+            db.log_action("Logs do sistema limpos pelo usuário.", "WARNING")
+            st.success("Logs limpos!")
+            time.sleep(0.5)
+            st.rerun()
+
+    # Load logs
+    db_level = None if level_filter == "Todos" else level_filter
+    system_logs = db.get_logs(limit=max_entries, level=db_level)
+    
+    # Auto-refresh helper
+    refresh_option = st.checkbox("Auto-atualizar a cada 3 segundos", value=True)
+    
+    # Container for logs
+    log_text = ""
+    if system_logs:
+        # Loop in reverse order (oldest first for natural logging look) to build log console
+        for log in reversed(system_logs):
+            timestamp_val = log[1] # Timestamp column
+            if isinstance(timestamp_val, str):
+                timestamp_str = timestamp_val
+            else:
+                timestamp_str = timestamp_val.strftime("%Y-%m-%d %H:%M:%S")
+            level_str = log[2]
+            msg = log[3]
+            log_text += f"[{timestamp_str}] [{level_str}] {msg}\n"
+    else:
+        log_text = "Nenhum log encontrado para o filtro selecionado."
+
+    # Code block console styled with CSS
+    st.text_area(
+        label="Terminal de Operações", 
+        value=log_text, 
+        height=450, 
+        disabled=True, 
+        help="Logs mais recentes aparecem no fim do bloco."
+    )
+    
+    if refresh_option:
+        time.sleep(3)
+        st.rerun()
+

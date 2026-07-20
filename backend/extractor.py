@@ -2,7 +2,7 @@ import requests
 import logging
 import random
 import re
-from backend.database import get_setting, save_lead
+from backend.database import get_setting, save_lead, log_action
 
 logger = logging.getLogger("Extractor")
 
@@ -37,7 +37,7 @@ def generate_simulated_leads(keyword, radius):
     Generates high-fidelity simulated leads based on keyword and city.
     Ensures correct local phone numbers (DDD) and realistic business profiles.
     """
-    logger.info(f"Using high-fidelity simulator for extraction: {keyword}")
+    log_action(f"Extrator: Iniciando simulação de leads para a busca '{keyword}' (Raio: {radius}m)", "INFO")
     
     # Parse keyword to detect niche and city
     # E.g. "Oficinas em São Paulo" -> niche: Oficinas, city: São Paulo
@@ -48,10 +48,11 @@ def generate_simulated_leads(keyword, radius):
     if len(match) > 1:
         niche = match[0].strip().capitalize()
         city = match[1].strip().title()
-    else:
-        niche = keyword.strip().capitalize()
         
+    log_action(f"Extrator: Nicho detectado: '{niche}', Cidade detectada: '{city}'", "INFO")
+    
     ddd = get_area_code_by_city(city)
+    log_action(f"Extrator: Utilizando DDD local '{ddd}' para números gerados.", "INFO")
     
     # Standard lists for generating names
     prefixes = {
@@ -68,7 +69,7 @@ def generate_simulated_leads(keyword, radius):
     
     # Determine prefixes list based on niche match
     niche_lower = niche.lower()
-    selected_prefixes = [niche] # Use the searched niche itself as fallback instead of Mercado!
+    selected_prefixes = [niche] 
     for k, val in prefixes.items():
         if k.lower() in niche_lower or niche_lower in k.lower():
             selected_prefixes = val
@@ -81,6 +82,7 @@ def generate_simulated_leads(keyword, radius):
     
     leads = []
     num_leads = random.randint(8, 14)
+    log_action(f"Extrator: Gerando lote de {num_leads} leads simulados...", "INFO")
     
     for i in range(num_leads):
         # Generate Business Name
@@ -96,14 +98,9 @@ def generate_simulated_leads(keyword, radius):
         ]
         nome = random.choice(name_patterns)
         
-        # Phone: mobile (9xxxx-xxxx) or landline (3xxx-xxxx)
-        is_mobile = random.choice([True, False])
-        if is_mobile:
-            phone_body = f"9{random.randint(1000, 9999)}-{random.randint(1000, 9999)}"
-        else:
-            phone_body = f"{random.randint(3000, 4999)}-{random.randint(1000, 9999)}"
-            
-        telefone = f"+55 {ddd} {phone_body}"
+        # Phone
+        phone_body = "".join([str(random.randint(0, 9)) for _ in range(8)])
+        telefone = f"+55{ddd}9{phone_body[:4]}{phone_body[4:]}"
         
         # Address
         street = random.choice(streets)
@@ -133,7 +130,9 @@ def generate_simulated_leads(keyword, radius):
         lead_id = save_lead(lead_data)
         lead_data["id"] = lead_id
         leads.append(lead_data)
+        log_action(f"Banco: Salvo lead #{i+1}: '{nome}' ({telefone}) no banco de dados local.", "INFO")
         
+    log_action(f"Extrator: Extração concluída. Total de {len(leads)} leads gerados e salvos.", "INFO")
     return leads
 
 def extract_leads_official(api_key, keyword, radius):
@@ -141,7 +140,7 @@ def extract_leads_official(api_key, keyword, radius):
     Consumes official Google Places API (Text Search + Place Details)
     to search for businesses and retrieve full metadata.
     """
-    logger.info(f"Consuming official Google Places API for keyword: {keyword}")
+    log_action(f"Extrator: Consumindo API oficial do Google Places para palavra-chave: '{keyword}'", "INFO")
     
     # 1. Text Search to find Place IDs matching keyword
     search_url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
@@ -154,10 +153,12 @@ def extract_leads_official(api_key, keyword, radius):
     response.raise_for_status()
     results = response.json().get("results", [])
     
+    log_action(f"Extrator: Google Places retornou {len(results)} estabelecimentos candidatos.", "INFO")
+    
     leads = []
     
     # Limit to top 20 places to avoid excessive API billing and detail calls
-    for place in results[:20]:
+    for idx, place in enumerate(results[:20]):
         place_id = place.get("place_id")
         if not place_id:
             continue
@@ -172,6 +173,7 @@ def extract_leads_official(api_key, keyword, radius):
         }
         
         try:
+            log_action(f"Extrator: Buscando detalhes do Place ID {place_id} (Lead #{idx+1})...", "INFO")
             details_response = requests.get(details_url, params=details_params, timeout=10)
             details_response.raise_for_status()
             details = details_response.json().get("result", {})
@@ -187,10 +189,8 @@ def extract_leads_official(api_key, keyword, radius):
             total_avaliacoes = details.get("user_ratings_total", 0)
             
             # Format phone to include +55 and numbers only for WhatsApp compat
-            # Strip spaces, dashes, parentheses
             clean_phone = re.sub(r'[^0-9+]', '', telefone)
             if clean_phone and not clean_phone.startswith("+"):
-                # Guess Brazilian DDD standard
                 if len(clean_phone) >= 10:
                     clean_phone = f"+55{clean_phone}"
             
@@ -208,11 +208,13 @@ def extract_leads_official(api_key, keyword, radius):
             lead_id = save_lead(lead_data)
             lead_data["id"] = lead_id
             leads.append(lead_data)
+            log_action(f"Banco: Salvo lead #{idx+1} oficial: '{nome}' no banco de dados.", "INFO")
             
         except Exception as e:
-            logger.error(f"Error fetching details for place {place_id}: {str(e)}")
+            log_action(f"Extrator: Falha ao buscar detalhes do Place ID {place_id}: {str(e)}", "WARNING")
             continue
             
+    log_action(f"Extrator: API Oficial finalizada. Total de {len(leads)} leads reais importados.", "INFO")
     return leads
 
 def extract_leads(keyword, radius=5000):
@@ -223,9 +225,11 @@ def extract_leads(keyword, radius=5000):
     api_key = get_setting("google_places_key", "")
     if api_key and api_key.strip():
         try:
+            log_action("Extrator: Chave de Google Places detectada. Iniciando busca oficial...", "INFO")
             return extract_leads_official(api_key.strip(), keyword, radius)
         except Exception as e:
-            logger.error(f"Google Places API extraction failed, falling back to simulator: {str(e)}")
+            log_action(f"Extrator: Erro na busca oficial do Google Places. Iniciando fallback para Simulador local... Erro: {str(e)}", "WARNING")
             return generate_simulated_leads(keyword, radius)
     else:
+        log_action("Extrator: Nenhuma chave de Google Places cadastrada. Usando o Simulador local.", "INFO")
         return generate_simulated_leads(keyword, radius)

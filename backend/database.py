@@ -111,6 +111,14 @@ def init_db():
                 value TEXT
             )
         """, commit=True)
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS system_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                level TEXT,
+                message TEXT
+            )
+        """, commit=True)
     # PostgreSQL structure
     else:
         execute_query("""
@@ -136,6 +144,54 @@ def init_db():
                 value TEXT
             )
         """, commit=True)
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS system_logs (
+                id SERIAL PRIMARY KEY,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                level VARCHAR(50),
+                message TEXT
+            )
+        """, commit=True)
+
+def log_action(message, level="INFO"):
+    """Saves a system event log to the database and stdout."""
+    # Format log to print to console
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    console_msg = f"[{now_str}] [{level}] {message}"
+    if level == "ERROR":
+        logger.error(console_msg)
+    elif level == "WARNING":
+        logger.warning(console_msg)
+    else:
+        logger.info(console_msg)
+        
+    try:
+        # Save to DB
+        execute_query(
+            "INSERT INTO system_logs (level, message) VALUES (?, ?)", 
+            (level, message), 
+            commit=True
+        )
+    except Exception as e:
+        print(f"Failed to save log to database: {str(e)}")
+
+def get_logs(limit=100, level=None):
+    """Retrieves logs from the database, optionally filtering by level."""
+    query = "SELECT * FROM system_logs"
+    params = []
+    
+    if level:
+        query += " WHERE level = ?"
+        params.append(level)
+        
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+    
+    return execute_query(query, tuple(params), fetchall=True)
+
+def clear_logs():
+    """Clears all system logs."""
+    execute_query("DELETE FROM system_logs", commit=True)
 
 def save_lead(lead_data):
     """Saves a lead to the database. Prevents duplication."""
